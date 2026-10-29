@@ -16,22 +16,25 @@ import java.util.concurrent.TimeUnit
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         if (i.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
-        if (!Store.enabled(c)) return
         val msgs = Telephony.Sms.Intents.getMessagesFromIntent(i) ?: return
 
         val bySender = LinkedHashMap<String, StringBuilder>()
         for (m in msgs) {
             bySender.getOrPut(m.originatingAddress ?: "") { StringBuilder() }.append(m.messageBody ?: "")
         }
-        val allowed = Store.get(c, "sender", "bKash").trim()
         var queued = false
         for ((sender, body) in bySender) {
-            if (!sender.trim().equals(allowed, ignoreCase = true)) continue
-            val t = Parser.parse(body.toString())
+            // proves the phone really delivers SMS to this app
+            Store.put(c, "lastSms", Store.stamp() + "  from " + sender)
+            if (!Store.enabled(c)) continue
+            if (!InboxScanner.senderMatches(c, sender)) continue
+            val text = body.toString()
+            val (t, why) = Parser.explain(text)
             if (t == null) {
-                Store.log(c, "Ignored a $allowed SMS (not a received-money message)")
+                Store.log(c, "Ignored SMS from $sender: $why | " + text.replace("\n", " ").take(90))
                 continue
             }
+            if (!Store.firstTime(c, t.id)) continue
             Store.addPending(
                 c,
                 JSONObject().put("trxId", t.id).put("amount", t.amount).put("sender", t.sender).put("smsTime", t.time)

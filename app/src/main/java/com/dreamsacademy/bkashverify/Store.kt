@@ -39,6 +39,21 @@ object Store {
         put(c, "pending", n.toString())
     }
 
+    /** True only the first time a TrxID is seen, so the same SMS is never queued twice. */
+    @Synchronized
+    fun firstTime(c: Context, trxId: String): Boolean {
+        val a = JSONArray(get(c, "seen", "[]"))
+        for (i in 0 until a.length()) if (a.getString(i) == trxId) return false
+        val n = JSONArray()
+        val from = maxOf(0, a.length() - 499)
+        for (i in from until a.length()) n.put(a.getString(i))
+        n.put(trxId)
+        put(c, "seen", n.toString())
+        return true
+    }
+
+    fun stamp(): String = SimpleDateFormat("dd MMM HH:mm:ss", Locale.getDefault()).format(Date())
+
     @Synchronized
     fun log(c: Context, msg: String) {
         val old = JSONArray(get(c, "log", "[]"))
